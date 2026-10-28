@@ -1,4 +1,4 @@
-# JioTV Android TV for Xiaomi TV
+# JioTV Android TV
 
 A standalone native Android TV starter inspired by the channel library and Jio account/service flow in [`andromyth/jiotv-lg-webos`](https://github.com/andromyth/jiotv-lg-webos).
 
@@ -23,7 +23,7 @@ gradle assembleDebug
 
 APK output: `app/build/outputs/apk/debug/app-debug.apk`.
 
-## Install on Xiaomi Android TV
+## Install on Android TV
 
 Enable Developer Options and USB/network debugging, then install the APK via Android Studio or `adb install app-debug.apk`. Launch **JTV Android TV**, sign in using Settings and a Jio OTP, and refresh the channels.
 
