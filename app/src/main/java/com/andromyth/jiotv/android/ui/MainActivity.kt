@@ -145,11 +145,18 @@ class MainActivity : AppCompatActivity() {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setSingleLine()
         }
+        val authStatus = TextView(this).apply {
+            text = "Enter your Jio mobile number, then choose Send OTP."
+            textSize = 14f
+            setTextColor(0xFFB8C0C8.toInt())
+            setPadding(0, 16, 0, 8)
+        }
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 8, 24, 0)
             addView(mobile)
             addView(otp)
+            addView(authStatus)
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle(if (api.session == null) "Sign in to Jio" else "Jio account")
@@ -159,28 +166,59 @@ class MainActivity : AppCompatActivity() {
             .setNeutralButton("Verify OTP", null)
             .setNegativeButton(if (api.session == null) "Close" else "Sign out", null)
             .create()
+
+        fun showAuthMessage(message: String, isError: Boolean = false) {
+            authStatus.text = message
+            authStatus.setTextColor(if (isError) 0xFFFF8B8B.toInt() else 0xFF91E0AF.toInt())
+            status.text = message
+        }
+
         dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val sendButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            val verifyButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+            val closeButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
+
+            sendButton.setOnClickListener {
+                val mobileNumber = mobile.text.toString()
+                sendButton.isEnabled = false
+                verifyButton.isEnabled = false
+                showAuthMessage("Contacting Jio to request the OTP…")
                 lifecycleScope.launch {
                     try {
-                        withContext(Dispatchers.IO) { api.sendOtp(mobile.text.toString()) }
-                        status.text = "OTP requested. Enter it and choose Verify OTP."
-                    } catch (e: Exception) { status.text = e.message ?: "Could not request OTP" }
+                        withContext(Dispatchers.IO) { api.sendOtp(mobileNumber) }
+                        showAuthMessage("Jio accepted the OTP request. Check your SMS, then enter the code above.")
+                        otp.requestFocus()
+                    } catch (e: Exception) {
+                        showAuthMessage(e.message ?: "Could not request OTP from Jio.", isError = true)
+                    } finally {
+                        sendButton.isEnabled = true
+                        verifyButton.isEnabled = true
+                    }
                 }
             }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+
+            verifyButton.setOnClickListener {
+                val mobileNumber = mobile.text.toString()
+                val code = otp.text.toString()
+                sendButton.isEnabled = false
+                verifyButton.isEnabled = false
+                showAuthMessage("Verifying OTP with Jio…")
                 lifecycleScope.launch {
                     try {
-                        withContext(Dispatchers.IO) {
-                            api.verifyOtp(mobile.text.toString(), otp.text.toString())
-                        }
-                        status.text = "Signed in to Jio"
+                        withContext(Dispatchers.IO) { api.verifyOtp(mobileNumber, code) }
+                        showAuthMessage("Signed in to Jio.")
                         dialog.dismiss()
                         refreshChannels()
-                    } catch (e: Exception) { status.text = e.message ?: "OTP verification failed" }
+                    } catch (e: Exception) {
+                        showAuthMessage(e.message ?: "OTP verification failed.", isError = true)
+                    } finally {
+                        sendButton.isEnabled = true
+                        verifyButton.isEnabled = true
+                    }
                 }
             }
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+
+            closeButton.setOnClickListener {
                 if (api.session != null) {
                     api.signOut()
                     status.text = "Signed out"
