@@ -71,7 +71,7 @@ class JioApi(context: Context) {
         require(parsed.protocol == "https" && (host == "jio.com" || host.endsWith(".jio.com") || host.endsWith(".jiocdn.com"))) {
             "Blocked non-Jio endpoint"
         }
-        val builder = Request.Builder().url(url).header("User-Agent", "okhttp/4.12.0")
+        val builder = Request.Builder().url(url).header("User-Agent", "okhttp/4.2.2")
         headers.forEach { (k, v) -> builder.header(k, v) }
         if (method == "POST") builder.post((body ?: "{}").toRequestBody(jsonType)) else builder.get()
         client.newCall(builder.build()).execute().use { response ->
@@ -96,11 +96,42 @@ class JioApi(context: Context) {
     }
 
     private fun authHeaders() = mapOf(
+        "Host" to "jiotvapi.media.jio.com",
         "os" to "android",
         "devicetype" to "phone",
         "appname" to "RJIL_JioTV",
         "Content-Type" to "application/json"
     )
+
+    /**
+     * Extract a short, non-sensitive explanation from an API error payload.
+     * Do not show/log phone numbers, bearer tokens or arbitrary large HTML bodies.
+     */
+    private fun safeServerMessage(raw: String): String {
+        val text = raw.trim()
+        if (text.isBlank()) return ""
+        val message = try {
+            val json = JSONObject(text)
+            val nestedError = json.optJSONObject("error")
+            listOf(
+                json.optString("message"),
+                json.optString("error_description"),
+                json.optString("description"),
+                json.optString("detail"),
+                nestedError?.optString("message").orEmpty(),
+                if (json.opt("error") is String) json.optString("error") else ""
+            ).firstOrNull { it.isNotBlank() && it != "null" }.orEmpty()
+        } catch (_: Exception) {
+            if (text.startsWith("<")) "" else text
+        }
+        return message
+            .replace(Regex("[\\u0000-\\u001F\\u007F]"), " ")
+            .replace(Regex("\\+?91[\\s-]?\\d{10}|\\b\\d{10}\\b"), "[number]")
+            .replace(Regex("\\b(?:Bearer\\s+)?[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b"), "[redacted token]")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(180)
+    }
 
     fun sendOtp(rawMobile: String) {
         val mobile = normalizeMobile(rawMobile)
@@ -114,7 +145,9 @@ class JioApi(context: Context) {
         // Match the upstream webOS client: this endpoint's success is the HTTP
         // status, not whether the body contains valid JSON.
         if (!response.successful) {
-            throw IOException("Jio could not send the OTP (HTTP ${response.code}).")
+            val detail = safeServerMessage(response.body)
+            val suffix = if (detail.isBlank()) "" else ": $detail"
+            throw IOException("Jio rejected the OTP request (HTTP ${response.code})$suffix")
         }
     }
 
