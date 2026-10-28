@@ -33,4 +33,4 @@ The original webOS repository contains a Node-based service with token refresh, 
 
 ## Security and legal notes
 
-Use only a Jio subscription and account you are authorized to use. No credentials, OTPs, or session tokens should be committed. Unofficial endpoints may change. This project is community work and is not affiliated with or endorsed by Jio or Xiaomi.
+Use only a Jio subscription and account you are authorized to use. No credentials, OTPs, or session tokens should be committed. Unofficial endpoints may change. This project is community work and is not affiliated with or endorsed by Jio.
