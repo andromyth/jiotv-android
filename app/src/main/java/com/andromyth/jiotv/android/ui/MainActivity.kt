@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(36, 24, 36, 24)
             setBackgroundColor(0xFF080B10.toInt())
             isFocusableInTouchMode = true
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         }
         title = TextView(this).apply {
             text = "JTV   LIVE TV"
@@ -66,6 +67,9 @@ class MainActivity : AppCompatActivity() {
             divider = null
             selector = android.graphics.drawable.ColorDrawable(0xFFFF805D.toInt())
             isFocusable = true
+            isFocusableInTouchMode = true
+            itemsCanFocus = false
+            choiceMode = ListView.CHOICE_MODE_SINGLE
             onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
                 val filtered = filteredChannels()
                 filtered.getOrNull(position)?.let(::playChannel)
@@ -130,6 +134,14 @@ class MainActivity : AppCompatActivity() {
                 }
                 view.setBackgroundColor(0xFF151B22.toInt())
                 return view
+            }
+        }
+        channelList.setSelection(if (filtered.isNotEmpty()) 0 else ListView.INVALID_POSITION)
+        channelList.post {
+            if (filtered.isNotEmpty()) {
+                channelList.requestFocus()
+            } else {
+                focusFirstInteractive()
             }
         }
     }
@@ -251,6 +263,59 @@ class MainActivity : AppCompatActivity() {
                 status.text = "${channel.name}: ${e.message ?: "Playback failed"}"
             }
         }
+    }
+
+    /**
+     * TV remotes often return to an Activity with no focused child after a dialog
+     * is dismissed. Always recover to a navigable control instead of dropping D-pad input.
+     */
+    private fun focusFirstInteractive() {
+        val filtered = filteredChannels()
+        if (channelList.visibility == View.VISIBLE && filtered.isNotEmpty()) {
+            if (channelList.selectedItemPosition < 0) channelList.setSelection(0)
+            channelList.requestFocus()
+            return
+        }
+        val actions = root.getChildAt(2) as? LinearLayout
+        val firstButton = actions?.getChildAt(0)
+        if (firstButton != null) firstButton.requestFocus() else root.requestFocus()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                    if (channelList.hasFocus()) {
+                        val filtered = filteredChannels()
+                        val position = channelList.selectedItemPosition
+                        if (position in filtered.indices) {
+                            playChannel(filtered[position])
+                            return true
+                        }
+                        if (filtered.isNotEmpty()) {
+                            channelList.setSelection(0)
+                            channelList.requestFocus()
+                            return true
+                        }
+                    }
+                }
+                KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (currentFocus == null || currentFocus === root) {
+                        focusFirstInteractive()
+                        return true
+                    }
+                    if (channelList.hasFocus() && channelList.selectedItemPosition < 0 && filteredChannels().isNotEmpty()) {
+                        channelList.setSelection(0)
+                        channelList.requestFocus()
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
