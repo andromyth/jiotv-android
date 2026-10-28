@@ -25,6 +25,12 @@ class JioApi(context: Context) {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
+    private data class RawResponse(
+        val code: Int,
+        val successful: Boolean,
+        val body: String
+    )
+
     var session: JioSession? = loadSession()
         private set
 
@@ -50,7 +56,16 @@ class JioApi(context: Context) {
         prefs.edit().remove("session").apply()
     }
 
-    private fun req(url: String, method: String = "GET", body: String? = null, headers: Map<String, String> = emptyMap()): JSONObject {
+    /**
+     * Executes a Jio request without assuming that its body is JSON.
+     * In particular, the send-OTP endpoint may return a successful empty body.
+     */
+    private fun rawReq(
+        url: String,
+        method: String = "GET",
+        body: String? = null,
+        headers: Map<String, String> = emptyMap()
+    ): RawResponse {
         val parsed = URL(url)
         val host = parsed.host.lowercase()
         require(parsed.protocol == "https" && (host == "jio.com" || host.endsWith(".jio.com") || host.endsWith(".jiocdn.com"))) {
@@ -61,19 +76,46 @@ class JioApi(context: Context) {
         if (method == "POST") builder.post((body ?: "{}").toRequestBody(jsonType)) else builder.get()
         client.newCall(builder.build()).execute().use { response ->
             val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw IOException("Jio request failed (HTTP ${response.code}).")
-            return try { if (text.isBlank()) JSONObject() else JSONObject(text) }
-            catch (e: Exception) { throw IOException("Jio returned an unreadable response.", e) }
+            return RawResponse(response.code, response.isSuccessful, text)
         }
     }
 
-    private fun authHeaders() = mapOf("os" to "android", "devicetype" to "phone", "appname" to "RJIL_JioTV", "Content-Type" to "application/json")
+    private fun req(
+        url: String,
+        method: String = "GET",
+        body: String? = null,
+        headers: Map<String, String> = emptyMap()
+    ): JSONObject {
+        val response = rawReq(url, method, body, headers)
+        if (!response.successful) throw IOException("Jio request failed (HTTP ${response.code}).")
+        return try {
+            if (response.body.isBlank()) JSONObject() else JSONObject(response.body)
+        } catch (e: Exception) {
+            throw IOException("Jio returned an unreadable response (HTTP ${response.code}).", e)
+        }
+    }
+
+    private fun authHeaders() = mapOf(
+        "os" to "android",
+        "devicetype" to "phone",
+        "appname" to "RJIL_JioTV",
+        "Content-Type" to "application/json"
+    )
 
     fun sendOtp(rawMobile: String) {
         val mobile = normalizeMobile(rawMobile)
         val number = Base64.encodeToString(("+91$mobile").toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        req("https://jiotvapi.media.jio.com/userservice/apis/v1/loginotp/send", "POST",
-            JSONObject().put("number", number).toString(), authHeaders())
+        val response = rawReq(
+            "https://jiotvapi.media.jio.com/userservice/apis/v1/loginotp/send",
+            "POST",
+            JSONObject().put("number", number).toString(),
+            authHeaders()
+        )
+        // Match the upstream webOS client: this endpoint's success is the HTTP
+        // status, not whether the body contains valid JSON.
+        if (!response.successful) {
+            throw IOException("Jio could not send the OTP (HTTP ${response.code}).")
+        }
     }
 
     fun verifyOtp(rawMobile: String, otp: String): JioSession {
