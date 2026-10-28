@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
         actions.addView(button("Settings") { showSignIn() })
         channelList = ListView(this).apply {
             divider = null
-            selector = android.R.drawable.list_selector_background
+            selector = android.graphics.drawable.ColorDrawable(0xFFFF805D.toInt())
             isFocusable = true
             onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
                 val filtered = filteredChannels()
